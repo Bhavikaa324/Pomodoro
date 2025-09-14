@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Pomodoro Timer</title>
+    <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+<h1>Pomodoro Timer</h1>
+
+<!-- Timer Control Buttons -->
+<button onclick="sendCommand('start')">Start Timer</button>
+<button onclick="sendCommand('stop')">Stop Timer</button>
+<button onclick="sendCommand('reset')">Reset Timer</button>
+
+<!-- Custom Timer Input -->
+<div style="margin:20px 0;">
+    <input type="number" id="customHours" placeholder="Hours" min="0" style="padding: 8px; width: 80px;">
+    <input type="number" id="customMinutes" placeholder="Minutes" min="0" style="padding: 8px; width: 80px;">
+    <input type="number" id="customSeconds" placeholder="Seconds" min="0" style="padding: 8px; width: 80px;">
+    <button onclick="setCustomDuration()" style="padding: 10px 20px; font-size: 16px;">Set Timer</button>
+</div>
+
+<!-- Timer Display -->
+<div id="timer">00:25:00</div>
+
+<!-- Progress Bar -->
+<div id="progressBarContainer">
+    <div id="progressBar"></div>
+</div>
+
+<!-- Status -->
+<p>Status: <span id="status">Listening for voice commands...</span></p>
+
+<script>
+    function sendCommand(command) {
+        fetch(`/${command}`)
+            .then(res => res.json())
+            .then(data => {
+                if (command === 'reset' && data.duration) {
+                    document.getElementById('timer').innerText = data.duration;
+                }
+                document.getElementById('status').innerText = `Timer ${data.status}`;
+            })
+            .catch(err => console.error(err));
+    }
+
+    function setCustomDuration() {
+        const h = parseInt(document.getElementById('customHours').value) || 0;
+        const m = parseInt(document.getElementById('customMinutes').value) || 0;
+        const s = parseInt(document.getElementById('customSeconds').value) || 0;
+        const totalSec = h*3600 + m*60 + s;
+        if (totalSec < 1) return document.getElementById('status').innerText='Enter valid time';
+        fetch(`/set_duration?hours=${h}&minutes=${m}&seconds=${s}`)
+            .then(res => res.json())
+            .then(data => { document.getElementById('status').innerText = data.status; })
+            .catch(err => console.error(err));
+    }
+
+    function updateTimerDisplay(timeLeft, totalDuration) {
+        const h = Math.floor(timeLeft/3600);
+        const m = Math.floor((timeLeft%3600)/60);
+        const s = timeLeft%60;
+        document.getElementById('timer').innerText =
+            `${h.toString().padStart(2,'0')}:${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+        document.getElementById('progressBar').style.width = `${(timeLeft/totalDuration)*100}%`;
+    }
+
+    setInterval(() => {
+        fetch('/time')
+            .then(res => res.json())
+            .then(data => updateTimerDisplay(data.time_left, data.total_duration))
+            .catch(err => console.error(err));
+    }, 1000);
+
+    const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+    recognition.lang = 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.onresult = e => {
+        const text = e.results[e.results.length-1][0].transcript.toUpperCase().trim();
+        document.getElementById('status').innerText = `Heard: ${text}`;
+        if (text.includes("START TIMER")) sendCommand('start');
+        else if (text.includes("STOP TIMER")) sendCommand('stop');
+        else if (text.includes("RESET TIMER")) sendCommand('reset');
+    };
+    recognition.onerror = e => console.error('Speech recognition error:', e.error);
+    recognition.onend = () => recognition.start();
+    recognition.start();
+</script>
+
+</body>
+</html>
