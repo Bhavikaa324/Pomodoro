@@ -3,56 +3,81 @@ import time
 
 class PomodoroTimer:
     def __init__(self):
-        self.default_duration = 25 * 60  # Default 25 minutes in seconds
-        self.duration = self.default_duration  # Current duration (can be customized)
+        # Default durations
+        self.work_duration = 25 * 60    # 25 min
+        self.short_break = 5 * 60       # 5 min
+        self.long_break = 15 * 60       # 15 min
+
+        # Session tracking
+        self.work_sessions_completed = 0
+        self.sessions_before_long_break = 4
+        self.total_work_sessions = None  # User-defined
+
+        # Timer state
+        self.duration = self.work_duration
         self.time_left = self.duration
         self.timer_thread = None
         self.running = False
         self.lock = threading.Lock()
-        self.reset_mode = False
+        self.mode = 'work'  # 'work', 'short_break', 'long_break', 'done'
 
     def _run_timer(self):
         while True:
             with self.lock:
-                if not self.running or self.time_left <= 0:
+                if not self.running or self.mode == 'done':
                     break
-                self.time_left -= 1
-            time.sleep(1)
 
-        with self.lock:
-            if self.time_left <= 0:
-                self.running = False
+                # Count down if time left
+                if self.time_left > 0:
+                    self.time_left -= 1
+                else:
+                    # Transition to next mode
+                    if self.mode == 'work':
+                        self.work_sessions_completed += 1
+                        if self.total_work_sessions and self.work_sessions_completed >= self.total_work_sessions:
+                            self.mode = 'done'
+                            self.running = False
+                            break
+                        # Choose break type
+                        if self.work_sessions_completed % self.sessions_before_long_break == 0:
+                            self.mode = 'long_break'
+                            self.duration = self.long_break
+                        else:
+                            self.mode = 'short_break'
+                            self.duration = self.short_break
+                        self.time_left = self.duration
+                    elif self.mode in ['short_break', 'long_break']:
+                        self.mode = 'work'
+                        self.duration = self.work_duration
+                        self.time_left = self.duration
+
+            time.sleep(1)
 
     def start(self):
         with self.lock:
-            if not self.running:
+            if not self.running and self.mode != 'done':
                 self.running = True
-                self.reset_mode = False
                 if self.timer_thread is None or not self.timer_thread.is_alive():
-                    self.timer_thread = threading.Thread(target=self._run_timer)
+                    self.timer_thread = threading.Thread(target=self._run_timer, daemon=True)
                     self.timer_thread.start()
 
     def stop(self):
         with self.lock:
-            if not self.reset_mode:
-                self.running = False
+            self.running = False
 
     def reset(self):
         with self.lock:
-            self.duration = self.default_duration  # Always reset to default 25 minutes
+            self.mode = 'work'
+            self.duration = self.work_duration
             self.time_left = self.duration
             self.running = False
-            self.reset_mode = True
+            self.work_sessions_completed = 0
+            self.total_work_sessions = None
 
-    def set_custom_duration(self, seconds=None):
+    def set_total_work_sessions(self, n):
         with self.lock:
-            if seconds and seconds > 0:
-                self.duration = seconds
-            else:
-                self.duration = self.default_duration
-            self.time_left = self.duration
-            self.running = False
-            self.reset_mode = False
+            if n > 0:
+                self.total_work_sessions = n
 
     def get_time_left(self):
         with self.lock:
@@ -61,3 +86,7 @@ class PomodoroTimer:
     def is_running(self):
         with self.lock:
             return self.running
+
+    def get_mode(self):
+        with self.lock:
+            return self.mode

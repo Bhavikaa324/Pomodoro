@@ -3,7 +3,7 @@ from timer import PomodoroTimer
 
 app = Flask(__name__)
 timer = PomodoroTimer()
-timer.set_custom_duration(25 * 60)  # Default 25 minutes
+user_started = False  # Track if user manually started work
 
 @app.route('/')
 def home():
@@ -11,51 +11,47 @@ def home():
 
 @app.route('/start')
 def start_timer():
+    global user_started
     timer.start()
-    return jsonify(status='started')
+    user_started = True
+    return jsonify(status='started')  # Only for user-triggered start
 
 @app.route('/stop')
 def stop_timer():
+    global user_started
     timer.stop()
+    user_started = False
     return jsonify(status='stopped')
 
 @app.route('/reset')
 def reset_timer():
+    global user_started
     timer.reset()
-    # Return default 25 minutes in HH:MM:SS format
-    h = 0
-    m = 25
-    s = 0
+    user_started = False
+    h, m, s = 0, 25, 0
     return jsonify(status='reset', duration=f'{h:02d}:{m:02d}:{s:02d}')
 
-@app.route('/set_duration')
-def set_duration():
-    # Accept hours, minutes, seconds separately
-    hours = request.args.get('hours', default=0, type=int)
-    minutes = request.args.get('minutes', default=0, type=int)
-    seconds = request.args.get('seconds', default=0, type=int)
-
-    # Convert to total seconds
-    total_seconds = hours * 3600 + minutes * 60 + seconds
-    if total_seconds < 1:
-        return jsonify(status='Error: Duration must be at least 1 second'), 400
-
-    # Set custom duration
-    timer.set_custom_duration(total_seconds)
-
-    # Normalize back to H:M:S
-    h = total_seconds // 3600
-    m = (total_seconds % 3600) // 60
-    s = total_seconds % 60
-
-    return jsonify(status=f'Duration set to {h:02d}:{m:02d}:{s:02d}')
+@app.route('/set_total_sessions')
+def set_total_sessions():
+    total_sessions = request.args.get('total', default=0, type=int)
+    if total_sessions < 1:
+        return jsonify(status='Error: Total sessions must be at least 1'), 400
+    timer.set_total_work_sessions(total_sessions)
+    return jsonify(status=f'Total work sessions set to {total_sessions}')
 
 @app.route('/time')
 def get_time():
+    mode = timer.get_mode()
+    # Only report "started" status for work if user actually started
+    status = 'running' if timer.is_running() else 'stopped'
     return jsonify({
         'time_left': timer.get_time_left(),
         'total_duration': timer.duration,
-        'is_running': timer.is_running()
+        'is_running': timer.is_running(),
+        'mode': mode,
+        'work_sessions_completed': timer.work_sessions_completed,
+        'user_started': user_started,
+        'status': status
     })
 
 if __name__ == '__main__':
